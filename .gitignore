@@ -1,0 +1,8 @@
+# Project place file
+*.rbxlx
+
+# Ignore lock files
+*.lock
+
+# Ignore Packages folder
+Packages

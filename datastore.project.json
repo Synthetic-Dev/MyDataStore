@@ -1,0 +1,11 @@
+{
+  "name": "MyDataStore",
+  "tree": {
+    "DataStore": {
+      "$path": "src/server"
+    },
+    "ClientStore": {
+      "$path": "src/client"
+    }
+  }
+}

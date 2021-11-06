@@ -1,0 +1,9 @@
+{
+  "name": "Services",
+  "tree": {
+    "$className": "Folder",
+    "DataStore": {
+      "$path": "../../../src/server"
+    }
+  }
+}

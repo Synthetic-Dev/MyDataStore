@@ -1,0 +1,9 @@
+{
+  "name": "Controllers",
+  "tree": {
+    "$className": "Folder",
+    "ClientStore": {
+      "$path": "../../../src/client"
+    }
+  }
+}
