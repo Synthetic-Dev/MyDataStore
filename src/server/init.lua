@@ -3,22 +3,10 @@ local DataStoreService = game:GetService("DataStoreService")
 
 local RunService = game:GetService("RunService")
 local PlayersService = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Packages = ReplicatedStorage:FindFirstChild("Packages")
-if not Packages then
-	error("Wally Packages not in ReplicatedStorage")
-end
-
-local KnitInstance = Packages:FindFirstChild("Knit")
-if not KnitInstance then
-	error("MyDataStore requires Knit! Knit could not be found.")
-end
-
-local Knit = require(KnitInstance)
-
-local Promise = require(Packages.Promise)
-local Signal = require(Packages.Signal)
+local Knit = require(script.Parent.Parent.Knit)
+local Promise = require(script.Parent.Parent.Promise)
+local Signal = require(script.Parent.Parent.Signal)
 
 --Components
 local util = script.Util

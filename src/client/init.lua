@@ -1,20 +1,6 @@
--- Services
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Packages = ReplicatedStorage:FindFirstChild("Packages")
-if not Packages then
-	error("Wally Packages not in ReplicatedStorage")
-end
-
-local KnitInstance = Packages:FindFirstChild("Knit")
-if not KnitInstance then
-	error("MyDataStore requires Knit! Knit could not be found.")
-end
-
-local Knit = require(KnitInstance)
-
-local Promise = require(Packages.Promise)
-local Signal = require(Packages.Signal)
+local Knit = require(script.Parent.Parent.Knit)
+local Promise = require(script.Parent.Parent.Promise)
+local Signal = require(script.Parent.Parent.Signal)
 
 local DataStore
 local ClientStore = Knit.CreateController({ Name = "ClientStore"; })
@@ -129,9 +115,10 @@ function ClientStore:OnLoad(timeout)
 	end)
 end
 
-function ClientStore:Create(data)
+function ClientStore:Init(data)
 	self.Data = data
 	self.Loaded = true
+	warn("ClientStore initiated with data:", data)
 end
 
 function ClientStore:KnitInit()
@@ -152,8 +139,9 @@ function ClientStore:KnitInit()
 end
 
 function ClientStore:KnitStart()
-	local data = DataStore:Init()
-	self:Create(data)
+	DataStore:Init():andThen(function(data)
+		self:Init(data)
+	end)
 end
 
 return ClientStore

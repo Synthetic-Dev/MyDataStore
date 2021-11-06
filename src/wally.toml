@@ -1,6 +1,6 @@
 [package]
 name = "synthetic-dev/mydatastore"
-version = "1.0.0"
+version = "1.0.1"
 license = "MIT"
 authors = ["SyntheticDev"]
 registry = "https://github.com/UpliftGames/wally-index"
