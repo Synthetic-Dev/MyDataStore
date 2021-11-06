@@ -7,17 +7,13 @@ local PlayersService = game:GetService("Players")
 local Knit = require(script.Parent.Parent.Knit)
 local Promise = require(script.Parent.Parent.Promise)
 local Signal = require(script.Parent.Parent.Signal)
-
---Components
-local util = script.Util
+local TableUtil = require(script.Parent.Parent.TableUtil)
 
 --Modules
-local TableUtil = require(util.TableUtil)
-local MockDataStoreService = require(util.MockDataStoreService)
+local MockDataStoreService = require(script.MockDataStoreService)
 
-local DefaultData = require(script.DefaultData)
 local DefaultInfo = require(script.DefaultInfo)
-local Globals = require(script.Globals)
+local DefaultGlobals = require(script.DefaultGlobals)
 
 --Data
 local DataStore = Knit.CreateService({
@@ -29,6 +25,12 @@ local DataStore = Knit.CreateService({
 	};
 })
 
+local Globals = TableUtil.Copy(DefaultGlobals)
+local DefaultData = nil
+local Store = nil
+
+DataStore.Started = false
+
 --Signals
 DataStore.SaveLeaderboard = Signal.new()
 DataStore.Saved = Signal.new()
@@ -38,52 +40,7 @@ DataStore.Session = { }
 DataStore.Stamps = { }
 DataStore.Globals = Globals
 
---Initialize Datastore
 local IsStudio = RunService:IsStudio()
-
-if game.GameId == 0 then
-	DataStore.IsUsingMockService = true
-elseif IsStudio then
-	-- Verify status of the DataStoreService on startup:
-	local success, err = pcall(function()
-		DataStoreService
-			:GetDataStore("__data")
-			:UpdateAsync("dss_api_check", function(v)
-				return v == nil and true or v
-			end)
-	end)
-
-	if not success then
-		-- Error codes: https://developer.roblox.com/articles/Datastore-Errors
-		local errCode = tonumber(err:match("^%d+"))
-		if errCode == 502 or errCode == 403 then
-			DataStore.IsUsingMockService = true
-		elseif errCode == 304 then
-			error(
-				"DataStoreService API check failed on UpdateAsync (request queue full)"
-			)
-		else
-			error(
-				"DataStoreService API error " .. errCode
-					or "[Unknown Status]" .. ": " .. err
-			)
-		end
-	end
-end
-
-if DataStore.IsUsingMockService then
-	warn("Warning: Data will not be saved. Please publish place.")
-
-	DataStoreService = MockDataStoreService
-elseif IsStudio and not Globals.SAVE_IN_STUDIO then
-	warn(
-		"Warning: Data will not be saved. Please enable the SAVE_IN_STUDIO flag."
-	)
-end
-
-local Store = DataStoreService:GetDataStore(
-	Globals.TITLE .. "_" .. Globals.VERSION
-)
 
 --Functions
 local function dwarn(...)
@@ -311,7 +268,7 @@ local function Load(player)
 	end
 
 	DataStore.Session[player.Name] = Verify(player, sessionData, isFirst)
-	dwarn(player.Name .. "'s Data: ", sessionData)
+	warn(player.Name .. "'s Data: ", sessionData)
 end
 
 local function Save(player, autosave)
@@ -576,7 +533,7 @@ function DataStore:WipeKeys(name, amount)
 			if success then
 				warn("Key removed:,", set.key)
 			else
-				warn("ERROR: Failed to remove a key.")
+				warn("ERROR: Failed to remove key '" .. set.key .. "'")
 			end
 		end
 	end
@@ -634,7 +591,7 @@ end
 function DataStore.Client:Init(player)
 	local start = os.clock()
 	repeat
-		task.wait()
+		task.wait(0.5)
 	until DataStore.Session[player.Name]
 		or os.clock() - Globals.TIMEOUT >= start
 
@@ -654,7 +611,126 @@ game:BindToClose(function()
 	end
 end)
 
+function DataStore:SetDefaultData(defaultData)
+	if DefaultData then
+		error("DefaultData has already been set")
+	end
+
+	if
+		typeof(defaultData) == "Instance" and defaultData:IsA("ModuleScript")
+	then
+		defaultData = require(defaultData)
+	end
+
+	if typeof(defaultData) ~= "table" then
+		error("Default data must be a table")
+	end
+
+	DefaultData = TableUtil.Copy(defaultData)
+	dwarn("DefaultData has been set")
+end
+
+function DataStore:SetGlobals(globals)
+	if typeof(globals) == "Instance" and globals:IsA("ModuleScript") then
+		globals = require(globals)
+	end
+
+	if typeof(globals) ~= "table" then
+		error("Globals must be a table")
+	end
+
+	local changed = { }
+
+	for key, value in pairs(globals) do
+		if DefaultGlobals[key] ~= nil then
+			changed[key] = { old = Globals[key]; new = value; }
+			Globals[key] = value
+		end
+	end
+
+	if Globals.DEBUG then
+		for key, values in pairs(changed) do
+			dwarn(
+				string.format(
+					"Changed global '%s' from %q to %q",
+					key,
+					tostring(values.old),
+					tostring(values.new)
+				)
+			)
+		end
+	end
+end
+
+function DataStore:Start(globals, defaultData)
+	self:SetGlobals(globals or { })
+
+	if defaultData then
+		self:SetDefaultData(defaultData)
+	end
+
+	if game.GameId == 0 then
+		DataStore.IsUsingMockService = true
+	elseif IsStudio then
+		-- Verify status of the DataStoreService on startup:
+		local success, err = pcall(function()
+			DataStoreService
+				:GetDataStore("__data")
+				:UpdateAsync("dss_api_check", function(v)
+					return v == nil and true or v
+				end)
+		end)
+
+		if not success then
+			-- Error codes: https://developer.roblox.com/articles/Datastore-Errors
+			local errCode = tonumber(err:match("^%d+"))
+			if errCode == 502 or errCode == 403 then
+				DataStore.IsUsingMockService = true
+			elseif errCode == 304 then
+				error(
+					"DataStoreService API check failed on UpdateAsync (request queue full)"
+				)
+			else
+				error(
+					"DataStoreService API error " .. errCode
+						or "[Unknown Status]" .. ": " .. err
+				)
+			end
+		end
+	end
+
+	if DataStore.IsUsingMockService then
+		warn("Warning: Data will not be saved. Please publish place.")
+
+		DataStoreService = MockDataStoreService
+	elseif IsStudio and not Globals.SAVE_IN_STUDIO then
+		warn(
+			"Warning: Data will not be saved. Please enable the SAVE_IN_STUDIO flag."
+		)
+	end
+
+	local datastoreName = Globals.TITLE .. "_" .. Globals.VERSION
+
+	Store = DataStoreService:GetDataStore(datastoreName)
+
+	self.Store = Store
+	self.Started = true
+
+	dwarn("Datastore '" .. datastoreName .. "' started")
+end
+
 function DataStore:KnitInit()
+	if not self.Started then
+		error("DataStore must be started before Knit.Start()")
+	end
+
+	if not DefaultData then
+		warn("Awaiting DefaultData to be set")
+		repeat
+			task.wait(0.5)
+		until DefaultData
+	end
+
 	DataStore.Client.Delete:Connect(function(player)
 		DataStore:Delete(player)
 	end)

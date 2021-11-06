@@ -1,6 +1,6 @@
 [package]
 name = "synthetic-dev/mydatastore"
-version = "1.0.1"
+version = "1.0.2"
 license = "MIT"
 authors = ["SyntheticDev"]
 registry = "https://github.com/UpliftGames/wally-index"
@@ -10,3 +10,4 @@ realm = "shared"
 Knit = "sleitnick/knit@1.1.0-rc.2"
 Signal = "sleitnick/signal@1.0.1"
 Promise = "evaera/promise@3.1.0"
+TableUtil = "sleitnick/table-util@1.1.1"
