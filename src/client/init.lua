@@ -1,18 +1,18 @@
-local Knit = require(script.Parent.Parent.Knit)
+local Comm = require(script.Parent.Parent.Comm)
 local Promise = require(script.Parent.Parent.Promise)
 local Signal = require(script.Parent.Parent.Signal)
 
-local DataStore
-local ClientStore = Knit.CreateController({ Name = "ClientStore"; })
+local MyDataStoreClient = { }
 
-ClientStore.Data = nil
-ClientStore.Loaded = false
+MyDataStoreClient.Data = nil
+MyDataStoreClient._loaded = false
 
--- Events
-ClientStore.Update = Signal.new()
+-- Signals
+MyDataStoreClient.Update = Signal.new()
+MyDataStoreClient.Loaded = Signal.new()
 
 -- API
-function ClientStore:Get(...)
+function MyDataStoreClient:Get(...)
 	local drill = { ...; }
 	return Promise.new(function(resolve, reject)
 		self
@@ -29,7 +29,7 @@ function ClientStore:Get(...)
 	end)
 end
 
-function ClientStore:GetMultiple(...)
+function MyDataStoreClient:GetMultiple(...)
 	local promises = { }
 	for _, drill in pairs({ ...; }) do
 		table.insert(promises, self:Get(table.unpack(drill)))
@@ -37,7 +37,7 @@ function ClientStore:GetMultiple(...)
 	return Promise.all(promises)
 end
 
-function ClientStore:Set(...)
+function MyDataStoreClient:Set(...)
 	local drill = { ...; }
 
 	self
@@ -62,7 +62,7 @@ function ClientStore:Set(...)
 		:catch(warn)
 end
 
-function ClientStore:Increment(...)
+function MyDataStoreClient:Increment(...)
 	local drill = { ...; }
 
 	self
@@ -92,56 +92,67 @@ function ClientStore:Increment(...)
 		:catch(warn)
 end
 
-function ClientStore:OnLoad(timeout)
+function MyDataStoreClient:OnLoad(timeout)
+	if self._loaded then
+		return Promise.resolve()
+	end
+
 	return Promise.new(function(resolve, reject)
-		local start = os.clock()
-		local yieldSent = false
-		while not self.Loaded do
-			if os.clock() - start > (timeout or 60) then
+		task.delay(timeout or 60, function()
+			if not self._loaded then
 				if timeout then
 					reject("Data didn't load within timeout")
 				end
 
-				if not yieldSent then
-					warn("Possible infinite yield for data")
-					yieldSent = true
-				end
+				warn("Possible infinite yield for data")
 			end
+		end)
 
-			task.wait()
+		while not self._loaded do
+			self.Loaded:Wait()
 		end
 
 		resolve()
 	end)
 end
 
-function ClientStore:Init(data)
+function MyDataStoreClient:_init(data)
 	self.Data = data
-	self.Loaded = true
-	warn("ClientStore initiated with data:", data)
+	self._loaded = true
+	self.Loaded:Fire()
+
+	warn("MyDataStore Client initiated with data:", data)
 end
 
-function ClientStore:KnitInit()
-	DataStore = Knit.GetService("DataStore")
+function MyDataStoreClient:Start()
+	if not script.Parent:WaitForChild("remotes", 5) then
+		error("MyDataStore Server was not started before client")
+	end
 
-	DataStore.Delete:Connect(function(data)
+	self._comm =
+		Comm.ClientComm.new(script.Parent, true, "remotes"):BuildObject()
+
+	self._comm.Delete:Connect(function(data)
 		self.Data = data
 		self.Update:Fire()
 	end)
 
-	DataStore.Set:Connect(function(...)
+	self._comm.Set:Connect(function(...)
 		self:Set(...)
 	end)
 
-	DataStore.Increment:Connect(function(...)
+	self._comm.Increment:Connect(function(...)
 		self:Increment(...)
 	end)
+
+	self._comm
+		:Init()
+		:andThen(function(data)
+			self:_init(data)
+		end)
+		:catch(function(err)
+			warn("MyDataStore Client failed to init, ", err)
+		end)
 end
 
-function ClientStore:KnitStart()
-	DataStore:Init():andThen(function(data)
-		self:Init(data)
-	end)
-end
-
-return ClientStore
+return MyDataStoreClient

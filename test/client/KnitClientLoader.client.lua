@@ -1,8 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Packages = ReplicatedStorage.Packages
-local Knit = require(Packages.Knit)
+local MyDataStore = require(Packages.MyDataStore)
 
-require(Packages.MyDataStore)
-
-Knit.Start():catch(warn)
+MyDataStore:Start()

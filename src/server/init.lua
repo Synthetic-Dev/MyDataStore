@@ -4,7 +4,7 @@ local DataStoreService = game:GetService("DataStoreService")
 local RunService = game:GetService("RunService")
 local PlayersService = game:GetService("Players")
 
-local Knit = require(script.Parent.Parent.Knit)
+local Comm = require(script.Parent.Parent.Comm)
 local Promise = require(script.Parent.Parent.Promise)
 local Signal = require(script.Parent.Parent.Signal)
 local TableUtil = require(script.Parent.Parent.TableUtil)
@@ -16,24 +16,27 @@ local DefaultInfo = require(script.DefaultInfo)
 local DefaultGlobals = require(script.DefaultGlobals)
 
 --Data
-local DataStore = Knit.CreateService({
-	Name = "DataStore";
+local DataStore = {
 	Client = {
-		Set = Knit.CreateSignal();
-		Increment = Knit.CreateSignal();
-		Delete = Knit.CreateSignal();
+		Set = "SIGNAL_MARKER";
+		Increment = "SIGNAL_MARKER";
+		Delete = "SIGNAL_MARKER";
 	};
-})
+}
 
 local Globals = TableUtil.Copy(DefaultGlobals)
 local DefaultData = nil
 local Store = nil
 
 DataStore.Started = false
+DataStore.Starting = false
 
 --Signals
 DataStore.SaveLeaderboard = Signal.new()
+DataStore.GlobalsSet = Signal.new()
+DataStore.DefaultsSet = Signal.new()
 DataStore.Saved = Signal.new()
+DataStore.Loaded = Signal.new()
 
 --Globals
 DataStore.Session = { }
@@ -268,6 +271,7 @@ local function Load(player)
 	end
 
 	DataStore.Session[player.Name] = Verify(player, sessionData, isFirst)
+	DataStore.Loaded:Fire(player)
 	warn(player.Name .. "'s Data: ", sessionData)
 end
 
@@ -480,32 +484,29 @@ function DataStore.isLoaded(player)
 end
 
 function DataStore:OnLoad(player, timeout)
+	if self.isLoaded(player) then
+		return Promise.resolve()
+	end
+
 	return Promise.new(function(resolve, reject, onCancel)
-		local start = os.clock()
-		local yieldSent = false
-		local run = true
+		local cancelled = false
 
 		onCancel(function()
-			run = false
+			cancelled = true
 		end)
 
-		while run and not self.isLoaded(player) do
-			if os.clock() - start > (timeout or 30) then
+		task.delay(timeout or 60, function()
+			if not cancelled and not self.isLoaded(player) then
 				if timeout then
 					reject("Player data didn't load within timeout")
 				end
 
-				if not yieldSent then
-					warn(
-						"Possible infinite yield for "
-							.. player.Name
-							.. "'s data"
-					)
-					yieldSent = true
-				end
+				warn("Possible infinite yield for " .. player.Name .. "'s data")
 			end
+		end)
 
-			task.wait()
+		while not cancelled and not self.isLoaded(player) do
+			self.Loaded:Wait()
 		end
 
 		resolve()
@@ -589,11 +590,7 @@ function DataStore:Blacklist(name, remove)
 end
 
 function DataStore.Client:Init(player)
-	local start = os.clock()
-	repeat
-		task.wait(0.5)
-	until DataStore.Session[player.Name]
-		or os.clock() - Globals.TIMEOUT >= start
+	self.Server:OnLoad(player, Globals.TIMEOUT):await()
 
 	local data = DataStore.Session[player.Name]
 	if data then
@@ -627,6 +624,7 @@ function DataStore:SetDefaultData(defaultData)
 	end
 
 	DefaultData = TableUtil.Copy(defaultData)
+	self.DefaultsSet:Fire()
 	dwarn("DefaultData has been set")
 end
 
@@ -642,11 +640,13 @@ function DataStore:SetGlobals(globals)
 	local changed = { }
 
 	for key, value in pairs(globals) do
-		if DefaultGlobals[key] ~= nil then
+		if DefaultGlobals[key] ~= nil and DefaultGlobals[key] ~= value then
 			changed[key] = { old = Globals[key]; new = value; }
 			Globals[key] = value
 		end
 	end
+
+	self.GlobalsSet:Fire()
 
 	if Globals.DEBUG then
 		for key, values in pairs(changed) do
@@ -663,6 +663,11 @@ function DataStore:SetGlobals(globals)
 end
 
 function DataStore:Start(globals, defaultData)
+	if self.Started or self.Starting then
+		error("MyDataStore Server has already been started")
+	end
+	self.Starting = true
+
 	self:SetGlobals(globals or { })
 
 	if defaultData then
@@ -710,24 +715,30 @@ function DataStore:Start(globals, defaultData)
 	end
 
 	local datastoreName = Globals.TITLE .. "_" .. Globals.VERSION
-
 	Store = DataStoreService:GetDataStore(datastoreName)
 
-	self.Store = Store
+	self._comm = Comm.ServerComm.new(script.Parent, "remotes")
+
+	for key, value in pairs(self.Client) do
+		if type(value) == "function" then
+			self._comm:WrapMethod(self.Client, key)
+		elseif value == "SIGNAL_MARKER" then
+			self.Client[key] = self._comm:CreateSignal(key)
+		end
+	end
+	self.Client.Server = self
+
+	self._store = Store
+
 	self.Started = true
+	self.Starting = false
 
 	dwarn("Datastore '" .. datastoreName .. "' started")
-end
-
-function DataStore:KnitInit()
-	if not self.Started then
-		error("DataStore must be started before Knit.Start()")
-	end
 
 	if not DefaultData then
 		warn("Awaiting DefaultData to be set")
 		repeat
-			task.wait(0.5)
+			self.DefaultsSet:Wait()
 		until DefaultData
 	end
 
@@ -763,8 +774,8 @@ function DataStore:KnitInit()
 		end
 	end
 
-	coroutine.wrap(function()
-		while task.wait(30) do
+	task.spawn(function()
+		while true do
 			for name, stamp in pairs(Autosaving) do
 				local player = PlayersService:FindFirstChild(name)
 
@@ -777,8 +788,10 @@ function DataStore:KnitInit()
 
 				task.wait(1)
 			end
+
+			task.wait(30)
 		end
-	end)()
+	end)
 end
 
 return DataStore
